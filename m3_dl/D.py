@@ -5,30 +5,19 @@ from io import BytesIO
 import requests
 import traceback
 import logging
-import time
-import threading
-from .progress2 import  pb2
-logger = logging.getLogger(__name__)
-
-
-def userDefineVisual(  tag, nowValue, fullValue,extrainfo):
-    percent = float(nowValue) / fullValue
-    icons="🕐🕑🕒🕓🕔🕕🕖🕗🕘🕙🕚🕛✅"
-    icons_len=len(icons)
-    s="%3d%%" % int(round(percent * 100)) if fullValue != nowValue else "    "
-    return    f"{tag} {icons[nowValue%(icons_len-1)] if fullValue!=nowValue else icons[-1]} {s} {extrainfo.rjust(15)}"
+#logger = logging.getLogger(__name__)
+logger = logging.getLogger("m38u")
 
 class D():
 
-    def __init__(self, cookie    = None, proxies = None,headers = None,verify = True,debug = False,ignore_local = False,retry_times = 9999999999) -> None:
-        self.cookie              = cookie
-        self.proxies             = proxies
-        self.headers             = headers
-        self.ignore_local        = ignore_local
-        self.retry_times         = retry_times
+    def __init__(self, cookie=None, proxies=None,headers=None,ignore_local=False,retry_times=9999999999, session = None) -> None:
+        self.cookie = cookie
+        self.proxies = proxies
+        self.headers=headers
+        self.ignore_local =ignore_local
+        self.retry_times = retry_times
         self.current_retry_times = 0
-        self.verify              = verify
-        self.debug               = debug
+        self.session = session
         super().__init__()
 
     def download(self, url, destFile, isAppend=True):
@@ -38,11 +27,12 @@ class D():
             
 
             if os.path.exists(destFile):
+                logger.error("File already exists")
                 return True
 
             webSize = self.getWebFileSize(url)
             if webSize == 0:
-                logger.debug("something went wrong, webSize is 0")
+                logger.error("something went wrong, webSize is 0")
                 return False
 
             localSize = 0
@@ -55,43 +45,40 @@ class D():
                 os.remove(destFile)
                 localSize=0
 
-            resp = requests.request("GET", url,timeout=10, headers=self.headers, stream=True, proxies=self.proxies, allow_redirects=True,verify=self.verify)
+            #resp = requests.request("GET", url,timeout=10, headers=self.headers, stream=True, proxies=self.proxies, allow_redirects=True, verify=False)
+            resp = self.session.get(url,timeout=10, headers=self.headers, stream=True, proxies=self.proxies, allow_redirects=True, verify=False)
             # if 300>resp.status_code >= 200:
             if resp.status_code>=200:
                 # logger.debug(f"stauts_code:{resp.status_code},destfile:{destFile}")
 
-                name = threading.current_thread().getName()
-                p = pb2.getSingleton()
-                start=time.time()
                 with open(destFile+".tmp", "ab") as f:
                     block_size = 1024
                     wrote = localSize
+                    # for data in tqdm(resp.iter_content(block_size), initial=wrote / block_size, total=webSize / block_size,unit='Mb', unit_scale=True):
                     for data in resp.iter_content(block_size):
                         if data:
                             wrote = wrote + len(data)
                             f.write(data)
-                            p.update(name.rjust(13,' '), wrote, webSize,str(int(wrote/(int(time.time()-start)+1)/1024)) +"kb/s",userDefineVisual)
                     if wrote != webSize:
-                        logger.debug(f"ERROR, something went wrong wroteSize{wrote} != webSize{webSize}")
+                        logger.error(f"ERROR, something went wrong wroteSize{wrote} != webSize{webSize}")
                         return False
 
-                os.rename(destFile+".tmp",destFile)
-                return True
+                    os.rename(destFile+".tmp",destFile)
+                    logger.error("Success!")
+                    return True
 
-            logger.debug(f"stauts_code:{resp.status_code},url:{resp.url}") 
+            logger.error(f"stauts_code:{resp.status_code},url:{resp.url}") 
             raise Exception("status_code is not 200.") 
 
         except Exception as e:
-            if self.debug:
-                logger.exception(e)
-            # traceback.print_stack()
+            logger.exception(e)
             return False
 
     def getWebFileSize(self, url):
         if self.cookie:
             self.headers['cookie']=self.cookie
 
-        rr = requests.get(url, headers=self.headers, stream=True, proxies=self.proxies, verify=self.verify)
+        rr = requests.get(url, headers=self.headers, stream=True, proxies=self.proxies, verify=False)
         file_size = int(rr.headers['Content-Length'])
 
         if 300>rr.status_code>=200:
